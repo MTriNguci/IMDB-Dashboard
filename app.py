@@ -4,6 +4,9 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 from src.const import get_constants
+import io
+import base64
+from datetime import datetime
 
 from src.dash1 import generate_visualizations as generate_visualizations1
 from src.dash2 import generate_visualizations as generate_visualizations2
@@ -37,7 +40,7 @@ def generate_stats_card (title, value, image_path):
                 html.P(value, className="card-value", style={'margin': '0px','fontSize': '22px','fontWeight': 'bold'}),
                 html.H4(title, className="card-title", style={'margin': '0px','fontSize': '18px','fontWeight': 'bold'})
             ], style={'textAlign': 'center'}),
-        ], style={'paddingBlock':'10px',"backgroundColor":'#deb522','border':'none','borderRadius':'10px'})
+        ], style={'paddingBlock':'10px',"backgroundColor":'#5959ff','border':'none','borderRadius':'10px'})
     )
 
 
@@ -50,7 +53,7 @@ tab_style = {
         'alignItems':'center',
         'justifyContent':'center',
         'fontWeight': 'bold',
-        'backgroundColor': '#deb522',
+        'backgroundColor': '#5959ff',
         'border':'none'
     },
     'active':{
@@ -63,7 +66,7 @@ tab_style = {
         'fontWeight': 'bold',
         'border':'none',
         'textDecoration': 'underline',
-        'backgroundColor': '#deb522'
+        'backgroundColor': '#5959ff'
     }
 }
 
@@ -105,7 +108,9 @@ offcanvas = html.Div(
             title="Series Recommendations",
             is_open=False,
             style={'backgroundColor':"black",'color':'#deb522'}
-        )
+        ),
+        dbc.Button("Export Data", id="export-data-btn", n_clicks=0, style={'backgroundColor':'#5959ff','color':'white','fontWeight': 'bold','border':'none'}),
+        dcc.Download(id="download-excel")
     ],
     style={'display': 'flex', 'justifyContent': 'space-between','marginTop': '20px'}
 )
@@ -187,6 +192,296 @@ def get_recommendations(df, indices, title, cosine_sim):
     # Return the top 10 most similar movies
     return df['title'].iloc[movie_indices]
 
+# Function to create Excel data for all charts
+def create_excel_data(movies, series, movies_splits, series_splits):
+    """Create Excel data for all chart visualizations"""
+    
+    # Create a BytesIO object to store the Excel file
+    output = io.BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Overview Tab Data (from dash1)
+        # 1. Parental Guide Treemap data
+        parental_guide_data = series["parentalguide"].value_counts().head(10).reset_index()
+        parental_guide_data.columns = ['Parental Guide', 'Count']
+        parental_guide_data.to_excel(writer, sheet_name='Overview_Parental_Guide', index=False)
+        
+        # 2. Genre Bar Chart data
+        genre_data = movies_splits["genre"]["genre"].value_counts().head(10).reset_index()
+        genre_data.columns = ['Genre', 'Count']
+        genre_data['Percentage'] = (genre_data['Count'] / genre_data['Count'].sum()) * 100
+        genre_data.to_excel(writer, sheet_name='Overview_Genres', index=False)
+        
+        # 3. Country Choropleth data
+        country_data = movies_splits["country"]["country"].value_counts().head(30).reset_index()
+        country_data.columns = ['Country', 'Count']
+        country_data.to_excel(writer, sheet_name='Overview_Countries', index=False)
+        
+        # 4. Ratings Box Plot data
+        ratings_data = series[["rating", "votes"]].copy()
+        ratings_data.to_excel(writer, sheet_name='Overview_Ratings', index=False)
+        
+        # Content Creators Tab Data (from dash2)
+        # 1. Top Creators Pie Chart data
+        creators_data = series_splits["creators"]["creators"].value_counts().head(10).reset_index()
+        creators_data.columns = ['Creator', 'Count']
+        creators_data.to_excel(writer, sheet_name='Creators_Top_Creators', index=False)
+        
+        # 2. Production Company Bar Chart data
+        prod_company_data = series_splits["production_company"]["production_company"].value_counts().head(10).reset_index()
+        prod_company_data.columns = ['Production Company', 'Count']
+        prod_company_data['Percentage'] = (prod_company_data['Count'] / prod_company_data['Count'].sum()) * 100
+        prod_company_data.to_excel(writer, sheet_name='Creators_Production_Companies', index=False)
+        
+        # 3. Top Stars Bar Chart data
+        stars_data = series_splits["stars"]["stars"].value_counts().head(10).reset_index()
+        stars_data.columns = ['Star', 'Count']
+        stars_data['Percentage'] = (stars_data['Count'] / stars_data['Count'].sum()) * 100
+        stars_data.to_excel(writer, sheet_name='Creators_Top_Stars', index=False)
+        
+        # 4. Languages Bar Chart data
+        language_data = series_splits["language"]["language"].value_counts().head(10).reset_index()
+        language_data.columns = ['Language', 'Count']
+        language_data['Percentage'] = (language_data['Count'] / language_data['Count'].sum()) * 100
+        language_data.to_excel(writer, sheet_name='Creators_Languages', index=False)
+        
+        # Parental Guide Tab Data (from dash3)
+        # 1. Parental Guide by Mean Votes
+        parental_votes_data = series.groupby("parentalguide")["votes"].mean().reset_index()
+        parental_votes_data.columns = ['Parental Guide', 'Mean Votes']
+        parental_votes_data = parental_votes_data.sort_values(by=["Mean Votes"], ascending=False)
+        parental_votes_data.to_excel(writer, sheet_name='Parental_Guide_Mean_Votes', index=False)
+        
+        # 2. Parental Guide by Count
+        parental_count_data = series.groupby("parentalguide").size().reset_index(name='count')
+        parental_count_data.columns = ['Parental Guide', 'Count']
+        parental_count_data = parental_count_data.sort_values(by=["Count"], ascending=False)
+        parental_count_data.to_excel(writer, sheet_name='Parental_Guide_Count', index=False)
+        
+        # Year Tab Data (from dash4)
+        # 1. Work Count Over Time
+        year_count_data = series.groupby("year").size().reset_index(name='count')
+        year_count_data.columns = ['Year', 'Count']
+        year_count_data.to_excel(writer, sheet_name='Year_Work_Count', index=False)
+        
+        # 2. Work Votes Over Time
+        year_votes_data = series.groupby("year")["votes"].mean().reset_index()
+        year_votes_data.columns = ['Year', 'Mean Votes']
+        year_votes_data.to_excel(writer, sheet_name='Year_Mean_Votes', index=False)
+        
+        # Raw Data
+        movies.to_excel(writer, sheet_name='Raw_Movies_Data', index=False)
+        series.to_excel(writer, sheet_name='Raw_Series_Data', index=False)
+    
+    # Get the workbook to add charts
+    workbook = writer.book
+    
+    # Add charts to each sheet
+    add_charts_to_excel(workbook, movies, series, movies_splits, series_splits)
+    
+    output.seek(0)
+    return output
+
+def add_charts_to_excel(workbook, movies, series, movies_splits, series_splits):
+    """Add charts to Excel sheets"""
+    from openpyxl.chart import BarChart, PieChart, LineChart, Reference
+    from openpyxl.chart.label import DataLabelList
+    
+    # 1. Overview_Parental_Guide - Pie Chart
+    sheet = workbook['Overview_Parental_Guide']
+    chart = PieChart()
+    chart.title = "Top Parental Guides"
+    chart.height = 15
+    chart.width = 20
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    # Add data labels
+    chart.dataLabels = DataLabelList()
+    chart.dataLabels.showPercent = True
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 2. Overview_Genres - Bar Chart
+    sheet = workbook['Overview_Genres']
+    chart = BarChart()
+    chart.title = "Top Genres"
+    chart.height = 15
+    chart.width = 20
+    chart.type = "col"
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 3. Overview_Countries - Bar Chart
+    sheet = workbook['Overview_Countries']
+    chart = BarChart()
+    chart.title = "Top Countries"
+    chart.height = 15
+    chart.width = 20
+    chart.type = "col"
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=min(31, sheet.max_row))
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(31, sheet.max_row))
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 4. Overview_Ratings - Scatter Chart (simulating box plot)
+    sheet = workbook['Overview_Ratings']
+    chart = BarChart()
+    chart.title = "Ratings Distribution"
+    chart.height = 15
+    chart.width = 20
+    chart.type = "col"
+    
+    # Create rating bins for visualization
+    rating_bins = pd.cut(series['rating'], bins=10)
+    rating_dist = rating_bins.value_counts().sort_index()
+    
+    # Add rating distribution to sheet
+    for i, (bin_name, count) in enumerate(rating_dist.items(), start=2):
+        sheet.cell(row=i, column=3, value=str(bin_name))
+        sheet.cell(row=i, column=4, value=count)
+    
+    sheet.cell(row=1, column=3, value="Rating Range")
+    sheet.cell(row=1, column=4, value="Count")
+    
+    data = Reference(sheet, min_col=4, min_row=1, max_row=min(12, sheet.max_row))
+    cats = Reference(sheet, min_col=3, min_row=2, max_row=min(12, sheet.max_row))
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "F2")
+    
+    # 5. Creators_Top_Creators - Pie Chart
+    sheet = workbook['Creators_Top_Creators']
+    chart = PieChart()
+    chart.title = "Top Creators"
+    chart.height = 15
+    chart.width = 20
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    chart.dataLabels = DataLabelList()
+    chart.dataLabels.showPercent = True
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 6. Creators_Production_Companies - Bar Chart
+    sheet = workbook['Creators_Production_Companies']
+    chart = BarChart()
+    chart.title = "Top Production Companies"
+    chart.height = 15
+    chart.width = 20
+    chart.type = "col"
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 7. Creators_Top_Stars - Bar Chart
+    sheet = workbook['Creators_Top_Stars']
+    chart = BarChart()
+    chart.title = "Top Stars"
+    chart.height = 15
+    chart.width = 20
+    chart.type = "col"
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 8. Creators_Languages - Bar Chart
+    sheet = workbook['Creators_Languages']
+    chart = BarChart()
+    chart.title = "Top Languages"
+    chart.height = 15
+    chart.width = 20
+    chart.type = "col"
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 9. Parental_Guide_Mean_Votes - Bar Chart
+    sheet = workbook['Parental_Guide_Mean_Votes']
+    chart = BarChart()
+    chart.title = "Parental Guide by Mean Votes"
+    chart.height = 15
+    chart.width = 20
+    chart.type = "col"
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 10. Parental_Guide_Count - Bar Chart
+    sheet = workbook['Parental_Guide_Count']
+    chart = BarChart()
+    chart.title = "Parental Guide by Count"
+    chart.height = 15
+    chart.width = 20
+    chart.type = "col"
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 11. Year_Work_Count - Line Chart
+    sheet = workbook['Year_Work_Count']
+    chart = LineChart()
+    chart.title = "Work Count Over Time"
+    chart.height = 15
+    chart.width = 20
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+    
+    # 12. Year_Mean_Votes - Line Chart
+    sheet = workbook['Year_Mean_Votes']
+    chart = LineChart()
+    chart.title = "Work Votes Over Time"
+    chart.height = 15
+    chart.width = 20
+    
+    data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
+    cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    
+    sheet.add_chart(chart, "D2")
+
 # Callback to update image container based on dropdown selection
 @app.callback(
     Output('movie-recommendation-content', 'children'),
@@ -212,6 +507,29 @@ def update_recommendation_movie(selected_movie):
             dcc.Link(f"{i+1} - {data['title'].values[0]}", href=data['link'].values[0], style={'display':'block','color':'#deb522','marginBlock':'10px'}
                     ,target='_blank') for i, data in enumerate(x)
     ],style={'marginTop': '10px','textAlign': 'center','color': '#deb522'})
+
+# Callback for Excel download
+@app.callback(
+    Output("download-excel", "data"),
+    Input("export-data-btn", "n_clicks"),
+    prevent_initial_call=True
+)
+def download_excel(n_clicks):
+    if n_clicks is None:
+        return None
+    
+    # Create Excel data
+    output = create_excel_data(movies, series, movies_splits, series_splits)
+    
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"IMDB_Dashboard_Data_{timestamp}.xlsx"
+    
+    return dcc.send_bytes(
+        output.getvalue(),
+        filename=filename,
+        type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 @app.callback(
     Output('series-recommendation-content', 'children'),
@@ -300,4 +618,4 @@ def update_tab(tab,tab2):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run(debug=False, host='0.0.0.0', port=8050)

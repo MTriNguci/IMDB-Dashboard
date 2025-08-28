@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  imdb-dashboard:
+    build: .
+    container_name: imdb-dashboard
+    ports:
+      - "8050:8050"
+    environment:
+      - PYTHONPATH=/app
+      - DASH_DEBUG=False
+    volumes:
+      # Mount data files for easy updates without rebuilding
+      - ./movie_after_cleaning.csv:/app/movie_after_cleaning.csv:ro
+      - ./series_after_cleaning.csv:/app/series_after_cleaning.csv:ro
+      - ./splits_movie.xlsx:/app/splits_movie.xlsx:ro
+      - ./splits_series.xlsx:/app/splits_series.xlsx:ro
+      - ./assets:/app/assets:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/_dash-dependencies"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - imdb-network
+
+networks:
+  imdb-network:
+    driver: bridge

@@ -25,6 +25,7 @@ This document explains how to run the IMDB Dashboard application using Docker.
    - Open your web browser and go to: `http://localhost:8050`
    - The dashboard should be accessible and fully functional
    - Use the "Export Data" button to download all chart data as Excel file with embedded charts
+   - Use the "Export PDF" button to download the entire dashboard as PDF using screenshots
 
 4. To stop the application:
    ```bash
@@ -52,6 +53,7 @@ This document explains how to run the IMDB Dashboard application using Docker.
 - **Volume mounting**: Data files are mounted as volumes for easy updates
 - **Security**: Runs as a non-root user inside the container
 - **Data Export**: Export all chart data to Excel file with multiple sheets and embedded charts
+- **PDF Export**: Export entire dashboard as PDF using screenshots for accurate representation
 
 ## Troubleshooting
 

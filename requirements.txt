@@ -6,3 +6,6 @@ numpy
 pandas
 plotly
 gunicorn
+pdfkit
+selenium
+Pillow

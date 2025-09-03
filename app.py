@@ -7,6 +7,16 @@ from src.const import get_constants
 import io
 import base64
 from datetime import datetime
+import pdfkit
+import tempfile
+import os
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from PIL import Image
+import time
 
 from src.dash1 import generate_visualizations as generate_visualizations1
 from src.dash2 import generate_visualizations as generate_visualizations2
@@ -79,7 +89,7 @@ dropdown_options_series = [{'label': title, 'value': title} for title in series[
 
 offcanvas = html.Div(
     [
-        dbc.Button("Movie Recommendation", id="open-movie-offcanvas", n_clicks=0, style={'backgroundColor':'#deb522','color':'black','fontWeight': 'bold','border':'none'}),
+        dbc.Button("Movie Recommendation", id="open-movie-offcanvas", n_clicks=0, style={'backgroundColor':'#5959ff','color':'white','fontWeight': 'bold','border':'none'}),
         dbc.Offcanvas(html.Div([
             dcc.Dropdown(
             id='movie-dropdown',
@@ -88,13 +98,13 @@ offcanvas = html.Div(
             searchable=True,
             style={'color':'black'}
             ),
-            dcc.Loading(html.Div(id='movie-recommendation-content'),type='circle',color='#deb522',style={'marginTop': '60px'})]),
+            dcc.Loading(html.Div(id='movie-recommendation-content'),type='circle',color='#5959ff',style={'marginTop': '60px'})]),
             id="movie-recommendation-offcanvas",
             title="Movie Recommendations",
             is_open=False,
-            style={'backgroundColor':"black",'color':'#deb522'}
+            style={'backgroundColor':"black",'color':'#5959ff'}
         ),
-        dbc.Button("Series Recommendation", id="open-series-offcanvas", n_clicks=0, style={'backgroundColor':'#deb522','color':'black','fontWeight': 'bold','border':'none'}),
+        dbc.Button("Series Recommendation", id="open-series-offcanvas", n_clicks=0, style={'backgroundColor':'#5959ff','color':'white','fontWeight': 'bold','border':'none'}),
         dbc.Offcanvas(html.Div([
             dcc.Dropdown(
             id='series-dropdown',
@@ -103,14 +113,16 @@ offcanvas = html.Div(
             searchable=True,
             style={'color':'black'}
             ),
-            dcc.Loading(html.Div(id='series-recommendation-content'),type='circle',color='#deb522',style={'marginTop': '60px'})]),
+            dcc.Loading(html.Div(id='series-recommendation-content'),type='circle',color='#5959ff',style={'marginTop': '60px'})]),
             id="series-recommendation-offcanvas",
             title="Series Recommendations",
             is_open=False,
-            style={'backgroundColor':"black",'color':'#deb522'}
+            style={'backgroundColor':"black",'color':'#5959ff'}
         ),
         dbc.Button("Export Data", id="export-data-btn", n_clicks=0, style={'backgroundColor':'#5959ff','color':'white','fontWeight': 'bold','border':'none'}),
-        dcc.Download(id="download-excel")
+        dbc.Button("Export PDF", id="export-pdf-btn", n_clicks=0, style={'backgroundColor':'#ff5959','color':'white','fontWeight': 'bold','border':'none'}),
+        dcc.Download(id="download-excel"),
+        dcc.Download(id="download-pdf")
     ],
     style={'display': 'flex', 'justifyContent': 'space-between','marginTop': '20px'}
 )
@@ -139,14 +151,14 @@ app.layout = html.Div([
         ],style={'marginBlock': '10px'}),
         dbc.Row([
             dcc.Tabs(id='tabs', value='movie', children=[
-                dcc.Tab(label='Movie', value='movie',style={'border':'1px line white','backgroundColor':'black','color': '#deb522','fontWeight': 'bold'},selected_style={'border':'1px solid white','backgroundColor':'black','color': '#deb522','fontWeight': 'bold','textDecoration': 'underline'}),
-                dcc.Tab(label='Series', value='series',style={'border':'1px solid white','backgroundColor':'black','color': '#deb522','fontWeight': 'bold'},selected_style={'border':'1px solid white','backgroundColor':'black','color': '#deb522','fontWeight': 'bold','textDecoration': 'underline'}),
+                dcc.Tab(label='Movie', value='movie',style={'border':'1px line white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold'},selected_style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold','textDecoration': 'underline'}),
+                dcc.Tab(label='Series', value='series',style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold'},selected_style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold','textDecoration': 'underline'}),
             ], style={'padding': '0px'})
         ]),
         dbc.Row([
             dcc.Loading([
                 html.Div(id='tabs-content')
-            ],type='default',color='#deb522')
+            ],type='default',color='#5959ff')
         ])
     ], style={'padding': '0px'})
 ],style={'backgroundColor': 'black', 'minHeight': '100vh'})
@@ -272,12 +284,14 @@ def create_excel_data(movies, series, movies_splits, series_splits):
         # Raw Data
         movies.to_excel(writer, sheet_name='Raw_Movies_Data', index=False)
         series.to_excel(writer, sheet_name='Raw_Series_Data', index=False)
-    
+
+
+        workbook = writer.book
+        add_charts_to_excel(workbook, movies, series, movies_splits, series_splits)
+        writer.book.save(output)
     # Get the workbook to add charts
-    workbook = writer.book
     
     # Add charts to each sheet
-    add_charts_to_excel(workbook, movies, series, movies_splits, series_splits)
     
     output.seek(0)
     return output
@@ -287,200 +301,340 @@ def add_charts_to_excel(workbook, movies, series, movies_splits, series_splits):
     from openpyxl.chart import BarChart, PieChart, LineChart, Reference
     from openpyxl.chart.label import DataLabelList
     
-    # 1. Overview_Parental_Guide - Pie Chart
-    sheet = workbook['Overview_Parental_Guide']
-    chart = PieChart()
-    chart.title = "Top Parental Guides"
-    chart.height = 15
-    chart.width = 20
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    # Add data labels
-    chart.dataLabels = DataLabelList()
-    chart.dataLabels.showPercent = True
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 2. Overview_Genres - Bar Chart
-    sheet = workbook['Overview_Genres']
-    chart = BarChart()
-    chart.title = "Top Genres"
-    chart.height = 15
-    chart.width = 20
-    chart.type = "col"
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 3. Overview_Countries - Bar Chart
-    sheet = workbook['Overview_Countries']
-    chart = BarChart()
-    chart.title = "Top Countries"
-    chart.height = 15
-    chart.width = 20
-    chart.type = "col"
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=min(31, sheet.max_row))
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(31, sheet.max_row))
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 4. Overview_Ratings - Scatter Chart (simulating box plot)
-    sheet = workbook['Overview_Ratings']
-    chart = BarChart()
-    chart.title = "Ratings Distribution"
-    chart.height = 15
-    chart.width = 20
-    chart.type = "col"
-    
-    # Create rating bins for visualization
-    rating_bins = pd.cut(series['rating'], bins=10)
-    rating_dist = rating_bins.value_counts().sort_index()
-    
-    # Add rating distribution to sheet
-    for i, (bin_name, count) in enumerate(rating_dist.items(), start=2):
-        sheet.cell(row=i, column=3, value=str(bin_name))
-        sheet.cell(row=i, column=4, value=count)
-    
-    sheet.cell(row=1, column=3, value="Rating Range")
-    sheet.cell(row=1, column=4, value="Count")
-    
-    data = Reference(sheet, min_col=4, min_row=1, max_row=min(12, sheet.max_row))
-    cats = Reference(sheet, min_col=3, min_row=2, max_row=min(12, sheet.max_row))
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "F2")
-    
-    # 5. Creators_Top_Creators - Pie Chart
-    sheet = workbook['Creators_Top_Creators']
-    chart = PieChart()
-    chart.title = "Top Creators"
-    chart.height = 15
-    chart.width = 20
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    chart.dataLabels = DataLabelList()
-    chart.dataLabels.showPercent = True
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 6. Creators_Production_Companies - Bar Chart
-    sheet = workbook['Creators_Production_Companies']
-    chart = BarChart()
-    chart.title = "Top Production Companies"
-    chart.height = 15
-    chart.width = 20
-    chart.type = "col"
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 7. Creators_Top_Stars - Bar Chart
-    sheet = workbook['Creators_Top_Stars']
-    chart = BarChart()
-    chart.title = "Top Stars"
-    chart.height = 15
-    chart.width = 20
-    chart.type = "col"
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 8. Creators_Languages - Bar Chart
-    sheet = workbook['Creators_Languages']
-    chart = BarChart()
-    chart.title = "Top Languages"
-    chart.height = 15
-    chart.width = 20
-    chart.type = "col"
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 9. Parental_Guide_Mean_Votes - Bar Chart
-    sheet = workbook['Parental_Guide_Mean_Votes']
-    chart = BarChart()
-    chart.title = "Parental Guide by Mean Votes"
-    chart.height = 15
-    chart.width = 20
-    chart.type = "col"
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 10. Parental_Guide_Count - Bar Chart
-    sheet = workbook['Parental_Guide_Count']
-    chart = BarChart()
-    chart.title = "Parental Guide by Count"
-    chart.height = 15
-    chart.width = 20
-    chart.type = "col"
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 11. Year_Work_Count - Line Chart
-    sheet = workbook['Year_Work_Count']
-    chart = LineChart()
-    chart.title = "Work Count Over Time"
-    chart.height = 15
-    chart.width = 20
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
-    
-    # 12. Year_Mean_Votes - Line Chart
-    sheet = workbook['Year_Mean_Votes']
-    chart = LineChart()
-    chart.title = "Work Votes Over Time"
-    chart.height = 15
-    chart.width = 20
-    
-    data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
-    cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    
-    sheet.add_chart(chart, "D2")
+    try:
+        # 1. Overview_Parental_Guide - Pie Chart
+        sheet = workbook['Overview_Parental_Guide']
+        chart = PieChart()
+        chart.title = "Top Parental Guides"
+        chart.height = 15
+        chart.width = 20
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        # Add data labels
+        chart.dataLabels = DataLabelList()
+        chart.dataLabels.showPercent = True
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 2. Overview_Genres - Bar Chart
+        sheet = workbook['Overview_Genres']
+        chart = BarChart()
+        chart.title = "Top Genres"
+        chart.height = 15
+        chart.width = 20
+        chart.type = "col"
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 3. Overview_Countries - Bar Chart
+        sheet = workbook['Overview_Countries']
+        chart = BarChart()
+        chart.title = "Top Countries"
+        chart.height = 15
+        chart.width = 20
+        chart.type = "col"
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=min(31, sheet.max_row))
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=min(31, sheet.max_row))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 4. Overview_Ratings - Bar Chart (simulating box plot)
+        sheet = workbook['Overview_Ratings']
+        chart = BarChart()
+        chart.title = "Ratings Distribution"
+        chart.height = 15
+        chart.width = 20
+        chart.type = "col"
+        
+        # Create rating bins for visualization
+        rating_bins = pd.cut(series['rating'], bins=10)
+        rating_dist = rating_bins.value_counts().sort_index()
+        
+        # Add rating distribution to sheet
+        for i, (bin_name, count) in enumerate(rating_dist.items(), start=2):
+            sheet.cell(row=i, column=3, value=str(bin_name))
+            sheet.cell(row=i, column=4, value=count)
+        
+        sheet.cell(row=1, column=3, value="Rating Range")
+        sheet.cell(row=1, column=4, value="Count")
+        
+        data = Reference(sheet, min_col=4, min_row=1, max_row=min(12, sheet.max_row))
+        cats = Reference(sheet, min_col=3, min_row=2, max_row=min(12, sheet.max_row))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 5. Creators_Top_Creators - Pie Chart
+        sheet = workbook['Creators_Top_Creators']
+        chart = PieChart()
+        chart.title = "Top Creators"
+        chart.height = 15
+        chart.width = 20
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        chart.dataLabels = DataLabelList()
+        chart.dataLabels.showPercent = True
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 6. Creators_Production_Companies - Bar Chart
+        sheet = workbook['Creators_Production_Companies']
+        chart = BarChart()
+        chart.title = "Top Production Companies"
+        chart.height = 15
+        chart.width = 20
+        chart.type = "col"
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 7. Creators_Top_Stars - Bar Chart
+        sheet = workbook['Creators_Top_Stars']
+        chart = BarChart()
+        chart.title = "Top Stars"
+        chart.height = 15
+        chart.width = 20
+        chart.type = "col"
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 8. Creators_Languages - Bar Chart
+        sheet = workbook['Creators_Languages']
+        chart = BarChart()
+        chart.title = "Top Languages"
+        chart.height = 15
+        chart.width = 20
+        chart.type = "col"
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=min(11, sheet.max_row))
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=min(11, sheet.max_row))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 9. Parental_Guide_Mean_Votes - Bar Chart
+        sheet = workbook['Parental_Guide_Mean_Votes']
+        chart = BarChart()
+        chart.title = "Parental Guide by Mean Votes"
+        chart.height = 15
+        chart.width = 20
+        chart.type = "col"
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 10. Parental_Guide_Count - Bar Chart
+        sheet = workbook['Parental_Guide_Count']
+        chart = BarChart()
+        chart.title = "Parental Guide by Count"
+        chart.height = 15
+        chart.width = 20
+        chart.type = "col"
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 11. Year_Work_Count - Line Chart
+        sheet = workbook['Year_Work_Count']
+        chart = LineChart()
+        chart.title = "Work Count Over Time"
+        chart.height = 15
+        chart.width = 20
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        # 12. Year_Mean_Votes - Line Chart
+        sheet = workbook['Year_Mean_Votes']
+        chart = LineChart()
+        chart.title = "Work Votes Over Time"
+        chart.height = 15
+        chart.width = 20
+        
+        data = Reference(sheet, min_col=2, min_row=1, max_row=sheet.max_row)
+        cats = Reference(sheet, min_col=1, min_row=2, max_row=sheet.max_row)
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        
+        sheet.add_chart(chart, "G2")
+        print(f"Added chart to {sheet.title}")
+        
+        print("All charts added successfully!")
+        
+    except Exception as e:
+        print(f"Error adding charts: {e}")
+
+# Function to create PDF of the dashboard using screenshots
+def create_dashboard_pdf():
+    """Create PDF of the dashboard using screenshots"""
+    try:
+        print("Starting screenshot-based PDF creation...")
+        
+        # Set up Chrome options for headless browsing
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--allow-running-insecure-content')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        
+        # Set display for Xvfb
+        os.environ['DISPLAY'] = ':99'
+        
+        # Initialize Chrome driver
+        driver = webdriver.Chrome(options=chrome_options)
+        
+        try:
+            # Navigate to the dashboard
+            dashboard_url = "http://127.0.0.1:8050"
+            print(f"Navigating to: {dashboard_url}")
+            driver.get(dashboard_url)
+            
+            # Wait for the page to load completely
+            wait = WebDriverWait(driver, 30)
+            wait.until(EC.presence_of_element_located((By.CLASS_NAME, "container")))
+            
+            # Additional wait for charts to load
+            print("Waiting for charts to load...")
+            time.sleep(10)
+            
+            # Get page dimensions
+            total_height = driver.execute_script("return document.body.scrollHeight")
+            viewport_width = driver.execute_script("return window.innerWidth")
+            viewport_height = driver.execute_script("return window.innerHeight")
+            
+            print(f"Page dimensions: {viewport_width}x{total_height}")
+            
+            # Create a list to store screenshots
+            screenshots = []
+            
+            # Take screenshots of different sections
+            sections = [
+                ("Overview", "overview"),
+                ("Content Creators", "content_creators"), 
+                ("Parental Guide", "parental"),
+                ("Year Analysis", "year")
+            ]
+            
+            for section_name, section_id in sections:
+                try:
+                    print(f"Taking screenshot of {section_name} section...")
+                    
+                    # Click on the section tab
+                    tab_selector = f'[value="{section_id}"]'
+                    tab_element = driver.find_element(By.CSS_SELECTOR, tab_selector)
+                    driver.execute_script("arguments[0].click();", tab_element)
+                    
+                    # Wait for content to load
+                    time.sleep(3)
+                    
+                    # Take screenshot
+                    screenshot_path = f"/tmp/{section_id}_screenshot.png"
+                    driver.save_screenshot(screenshot_path)
+                    
+                    # Open and process the screenshot
+                    with Image.open(screenshot_path) as img:
+                        # Crop to remove browser UI elements (adjust as needed)
+                        # Remove top 100px (browser UI) and bottom 50px
+                        cropped_img = img.crop((0, 100, img.width, img.height - 50))
+                        screenshots.append((section_name, cropped_img))
+                    
+                    print(f"Screenshot saved for {section_name}")
+                    
+                except Exception as e:
+                    print(f"Error taking screenshot for {section_name}: {e}")
+                    continue
+            
+            # Create PDF from screenshots
+            if screenshots:
+                print("Creating PDF from screenshots...")
+                pdf_path = "/tmp/dashboard_screenshots.pdf"
+                
+                # Convert first image to RGB if needed
+                first_img = screenshots[0][1]
+                if first_img.mode != 'RGB':
+                    first_img = first_img.convert('RGB')
+                
+                # Prepare other images
+                other_images = []
+                for section_name, img in screenshots[1:]:
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    other_images.append(img)
+                
+                # Save as PDF
+                first_img.save(pdf_path, "PDF", save_all=True, append_images=other_images)
+                
+                # Read the PDF file
+                with open(pdf_path, 'rb') as f:
+                    pdf_content = f.read()
+                
+                print(f"PDF created successfully, size: {len(pdf_content)} bytes")
+                return pdf_content
+            else:
+                print("No screenshots were taken successfully")
+                return None
+                
+        finally:
+            driver.quit()
+            print("Chrome driver closed")
+        
+    except Exception as e:
+        print(f"Error creating PDF: {e}")
+        return None
 
 # Callback to update image container based on dropdown selection
 @app.callback(
@@ -504,9 +658,9 @@ def update_recommendation_movie(selected_movie):
         return []
     
     return html.Div(children=[
-            dcc.Link(f"{i+1} - {data['title'].values[0]}", href=data['link'].values[0], style={'display':'block','color':'#deb522','marginBlock':'10px'}
+            dcc.Link(f"{i+1} - {data['title'].values[0]}", href=data['link'].values[0], style={'display':'block','color':'#5959ff','marginBlock':'10px'}
                     ,target='_blank') for i, data in enumerate(x)
-    ],style={'marginTop': '10px','textAlign': 'center','color': '#deb522'})
+    ],style={'marginTop': '10px','textAlign': 'center','color': '#5959ff'})
 
 # Callback for Excel download
 @app.callback(
@@ -531,6 +685,37 @@ def download_excel(n_clicks):
         type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
+# Callback for PDF download
+@app.callback(
+    Output("download-pdf", "data"),
+    Input("export-pdf-btn", "n_clicks"),
+    prevent_initial_call=True
+)
+def download_pdf(n_clicks):
+    if n_clicks is None:
+        return None
+    
+    try:
+        # Create PDF
+        pdf_content = create_dashboard_pdf()
+        
+        if pdf_content is None:
+            return None
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"IMDB_Dashboard_{timestamp}.pdf"
+        
+        return dcc.send_bytes(
+            pdf_content,
+            filename=filename,
+            type='application/pdf'
+        )
+        
+    except Exception as e:
+        print(f"Error in PDF download callback: {e}")
+        return None
+
 @app.callback(
     Output('series-recommendation-content', 'children'),
     [Input('series-dropdown', 'value')]
@@ -551,9 +736,9 @@ def update_recommendation_series(selected_series):
     else:
         return []
     return html.Div(children=[
-            dcc.Link(f"{i+1} - {data['title'].values[0]}", href=data['link'].values[0], style={'display':'block','color':'#deb522','marginBlock':'10px'}
+            dcc.Link(f"{i+1} - {data['title'].values[0]}", href=data['link'].values[0], style={'display':'block','color':'#5959ff','marginBlock':'10px'}
                     ,target='_blank') for i, data in enumerate(x)
-    ],style={'marginTop': '10px','textAlign': 'center','color': '#deb522'})
+    ],style={'marginTop': '10px','textAlign': 'center','color': '#5959ff'})
 
 
 @app.callback(

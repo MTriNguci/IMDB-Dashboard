@@ -1,7 +1,12 @@
 import plotly.express as px
+from .query_manager import get_query_manager
 
 def generate_visualizations(series, splits):
-    top_five_genres = series["parentalguide"].value_counts().head(10).reset_index(name='count')
+    # Get query manager to use EXACT same queries
+    query_manager = get_query_manager()
+    
+    # Use EXACT same data from QueryManager
+    top_five_genres = query_manager.get_parental_guide_treemap_data()
     fig_treemap = px.treemap(top_five_genres, 
                              path=['parentalguide'],  
                              values='count', 
@@ -9,9 +14,8 @@ def generate_visualizations(series, splits):
                              color='count',color_continuous_scale='viridis')
     fig_treemap.update_layout(template='plotly_dark', font=dict(color='yellow'))
 
-    top_values_language = splits["genre"]["genre"].value_counts().head(10).reset_index(name='count')
-    total_count_language = top_values_language['count'].sum()
-    top_values_language['percentage'] = (top_values_language['count'] / total_count_language) * 100
+    # Use EXACT same data from QueryManager
+    top_values_language = query_manager.get_genre_bar_data()
     fig_bar_language = px.bar(top_values_language, x='count', y="genre", orientation='h',
                               color='count', text='percentage',
                               title='Top genres',
@@ -21,42 +25,8 @@ def generate_visualizations(series, splits):
     fig_bar_language.update_layout(yaxis=dict(categoryorder='total ascending'))
     fig_bar_language.update_layout(template='plotly_dark', font=dict(color='yellow'))
 
-    top_countries = splits["country"]["country"].value_counts().head(30).reset_index(name='count')
-    country_mapping = {
-        'United States': 'USA',
-        'United Kingdom': 'GBR',
-        'France': 'FRA',
-        'Canada': 'CAN',
-        'Germany': 'DEU',
-        'Japan': 'JPN',
-        'India': 'IND',
-        'Australia': 'AUS',
-        'China': 'CHN',
-        'Italy': 'ITA',
-        'Spain': 'ESP',
-        'Mexico': 'MEX',
-        'Hong Kong': 'HKG',
-        'Sweden': 'SWE',
-        'Denmark': 'DNK',
-        'New Zealand': 'NZL',
-        'Belgium': 'BEL',
-        'South Korea': 'KOR',
-        'Ireland': 'IRL',
-        'Czech Republic': 'CZE',
-        'Switzerland': 'CHE',
-        'Hungary': 'HUN',
-        'Norway': 'NOR',
-        'United Arab Emirates': 'ARE',
-        'Netherlands': 'NLD',
-        'South Africa': 'ZAF',
-        'Poland': 'POL',
-        'West Germany': 'DEU',  # Assuming you want to use 'DEU' for Germany
-        'Austria': 'AUT',
-        'Turkey': 'TUR'
-    }
-    # Assuming 'df' is your DataFrame
-    top_countries['country'] = top_countries['country'].map(country_mapping)
-
+    # Use EXACT same data from QueryManager
+    top_countries = query_manager.get_country_choropleth_data()
     fig_choropleth = px.choropleth(top_countries, 
                                     locations="country",
                                     color="count",
@@ -66,10 +36,10 @@ def generate_visualizations(series, splits):
                                     color_continuous_scale='Viridis')
     fig_choropleth.update_layout(template='plotly_dark', font=dict(color='yellow'))
     
-    # Generate box plot for ratings
-    fig_boxplot = px.box(series, x="rating", title='Ratings Distribution')
+    # Use EXACT same data from QueryManager
+    ratings_data = query_manager.get_ratings_box_data()
+    fig_boxplot = px.box(ratings_data, x="rating", title='Ratings Distribution')
     fig_boxplot.update_traces(marker=dict(color='yellow'))
     fig_boxplot.update_layout(template='plotly_dark', font=dict(color='yellow'))
-
 
     return fig_treemap, fig_bar_language, fig_choropleth, fig_boxplot

@@ -1,14 +1,18 @@
 import plotly.express as px
+from .query_manager import get_query_manager
 
 def generate_visualizations(series, splits):
-    # New visualization 1
-    df1 = series.groupby("parentalguide")["votes"].mean().reset_index(name="votes").sort_values(by=["votes"], ascending=False)
-    fig_bar_mean_votes = px.bar(df1, x="parentalguide", y="votes", title='Parental Guide by Mean Votes', color="votes")
+    # Get query manager to use EXACT same queries
+    query_manager = get_query_manager()
+    
+    # Use EXACT same data from QueryManager
+    df1 = query_manager.get_parental_guide_mean_votes_data()
+    fig_bar_mean_votes = px.bar(df1, x="Parental Guide", y="Mean Votes", title='Parental Guide by Mean Votes', color="Mean Votes")
     fig_bar_mean_votes.update_layout(template='plotly_dark', font=dict(color='yellow'))
 
-    # New visualization 2
-    df2 = series.groupby("parentalguide").size().reset_index(name='count').sort_values(by=["count"], ascending=False)
-    fig_bar_count = px.bar(df2, x="parentalguide", y="count", title='Parental Guide by Count', color="count")
+    # Use EXACT same data from QueryManager
+    df2 = query_manager.get_parental_guide_count_data()
+    fig_bar_count = px.bar(df2, x="Parental Guide", y="Count", title='Parental Guide by Count', color="Count")
     fig_bar_count.update_layout(template='plotly_dark', font=dict(color='yellow'))
 
     return fig_bar_mean_votes, fig_bar_count

@@ -328,9 +328,9 @@ def add_charts_to_excel(workbook, movies, series, movies_splits, series_splits):
         print(f"Error adding charts: {e}")
 
 def create_dashboard_pdf():
-    """Create PDF of the dashboard using screenshots"""
+    """Create PDF of the dashboard using JavaScript html2canvas and jsPDF"""
     try:
-        print("Starting screenshot-based PDF creation...")
+        print("Starting JavaScript-based PDF creation...")
         
         # Set up Chrome options for headless browsing
         chrome_options = Options()
@@ -342,9 +342,6 @@ def create_dashboard_pdf():
         chrome_options.add_argument('--disable-web-security')
         chrome_options.add_argument('--allow-running-insecure-content')
         chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-        
-        # Set display for Xvfb
-        os.environ['DISPLAY'] = ':99'
         
         # Initialize Chrome driver
         driver = webdriver.Chrome(options=chrome_options)
@@ -363,81 +360,87 @@ def create_dashboard_pdf():
             print("Waiting for charts to load...")
             time.sleep(10)
             
-            # Get page dimensions
-            total_height = driver.execute_script("return document.body.scrollHeight")
-            viewport_width = driver.execute_script("return window.innerWidth")
-            viewport_height = driver.execute_script("return window.innerHeight")
+            # Inject the JavaScript libraries and PDF creation script
+            print("Injecting JavaScript libraries...")
             
-            print(f"Page dimensions: {viewport_width}x{total_height}")
+            # Load html2canvas library
+            html2canvas_script = """
+            var script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/0.4.1/html2canvas.min.js';
+            document.head.appendChild(script);
+            """
+            driver.execute_script(html2canvas_script)
+            time.sleep(3)  # Wait for library to load
             
-            # Create a list to store screenshots
-            screenshots = []
+            # Load jsPDF library
+            jspdf_script = """
+            var script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.5.1/jspdf.debug.js';
+            document.head.appendChild(script);
+            """
+            driver.execute_script(jspdf_script)
+            time.sleep(3)  # Wait for library to load
             
-            # Take screenshots of different sections
-            sections = [
-                ("Overview", "overview"),
-                ("Content Creators", "content_creators"), 
-                ("Parental Guide", "parental"),
-                ("Year Analysis", "year")
-            ]
+            # Create PDF using the JavaScript approach
+            print("Creating PDF using html2canvas and jsPDF...")
             
-            for section_name, section_id in sections:
-                try:
-                    print(f"Taking screenshot of {section_name} section...")
-                    
-                    # Click on the section tab
-                    tab_selector = f'[value="{section_id}"]'
-                    tab_element = driver.find_element(By.CSS_SELECTOR, tab_selector)
-                    driver.execute_script("arguments[0].click();", tab_element)
-                    
-                    # Wait for content to load
-                    time.sleep(3)
-                    
-                    # Take screenshot
-                    screenshot_path = f"/tmp/{section_id}_screenshot.png"
-                    driver.save_screenshot(screenshot_path)
-                    
-                    # Open and process the screenshot
-                    with Image.open(screenshot_path) as img:
-                        # Crop to remove browser UI elements (adjust as needed)
-                        # Remove top 100px (browser UI) and bottom 50px
-                        cropped_img = img.crop((0, 100, img.width, img.height - 50))
-                        screenshots.append((section_name, cropped_img))
-                    
-                    print(f"Screenshot saved for {section_name}")
-                    
-                except Exception as e:
-                    print(f"Error taking screenshot for {section_name}: {e}")
-                    continue
+            pdf_creation_script = """
+            return new Promise((resolve, reject) => {
+                // Wait a bit more for libraries to be fully loaded
+                setTimeout(() => {
+                    try {
+                        const printArea = document.getElementById("mainContainer") || document.body;
+                        
+                        html2canvas(printArea, {scale: 3}).then(function(canvas) {
+                            var imgData = canvas.toDataURL('image/png');
+                            var doc = new jsPDF('p', 'mm', "a4");
+                            
+                            const pageHeight = doc.internal.pageSize.getHeight();
+                            const imgWidth = doc.internal.pageSize.getWidth();
+                            var imgHeight = canvas.height * imgWidth / canvas.width;
+                            var heightLeft = imgHeight;
+                            
+                            var position = 10; // give some top padding to first page
+
+                            doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                            heightLeft -= pageHeight;
+
+                            while (heightLeft >= 0) {
+                                position += heightLeft - imgHeight; // top padding for other pages
+                                doc.addPage();
+                                doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                                heightLeft -= pageHeight;
+                            }
+                            
+                            // Get PDF as base64 string
+                            var pdfOutput = doc.output('datauristring');
+                            resolve(pdfOutput);
+                        }).catch(function(error) {
+                            reject(error);
+                        });
+                    } catch (error) {
+                        reject(error);
+                    }
+                }, 2000);
+            });
+            """
             
-            # Create PDF from screenshots
-            if screenshots:
-                print("Creating PDF from screenshots...")
-                pdf_path = "/tmp/dashboard_screenshots.pdf"
+            # Execute the PDF creation script
+            pdf_data_url = driver.execute_async_script(pdf_creation_script)
+            
+            if pdf_data_url:
+                # Extract base64 data from data URL
+                pdf_base64 = pdf_data_url.split(',')[1]
+                pdf_content = bytes(pdf_base64, 'utf-8')
                 
-                # Convert first image to RGB if needed
-                first_img = screenshots[0][1]
-                if first_img.mode != 'RGB':
-                    first_img = first_img.convert('RGB')
+                # Decode base64 to get actual PDF bytes
+                import base64
+                pdf_bytes = base64.b64decode(pdf_content)
                 
-                # Prepare other images
-                other_images = []
-                for section_name, img in screenshots[1:]:
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    other_images.append(img)
-                
-                # Save as PDF
-                first_img.save(pdf_path, "PDF", save_all=True, append_images=other_images)
-                
-                # Read the PDF file
-                with open(pdf_path, 'rb') as f:
-                    pdf_content = f.read()
-                
-                print(f"PDF created successfully, size: {len(pdf_content)} bytes")
-                return pdf_content
+                print(f"PDF created successfully using JavaScript, size: {len(pdf_bytes)} bytes")
+                return pdf_bytes
             else:
-                print("No screenshots were taken successfully")
+                print("Failed to create PDF using JavaScript")
                 return None
                 
         finally:

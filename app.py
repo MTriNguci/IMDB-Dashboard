@@ -11,7 +11,7 @@ from src.dash1 import generate_visualizations as generate_visualizations1
 from src.dash2 import generate_visualizations as generate_visualizations2
 from src.dash3 import generate_visualizations as generate_visualizations3
 from src.dash4 import generate_visualizations as generate_visualizations4
-from src.export_utils import create_excel_data, create_dashboard_pdf
+from src.export_utils import create_excel_data
 from src.query_manager import get_query_manager
 
 movies = pd.read_csv('./movie_after_cleaning.csv')
@@ -114,15 +114,19 @@ offcanvas = html.Div(
             style={'backgroundColor':"black",'color':'#5959ff'}
         ),
         dbc.Button("Export Data", id="export-data-btn", n_clicks=0, style={'backgroundColor':'#5959ff','color':'white','fontWeight': 'bold','border':'none'}),
-        dbc.Button("Export PDF", id="export-pdf-btn", n_clicks=0, style={'backgroundColor':'#ff5959','color':'white','fontWeight': 'bold','border':'none'}),
-        dcc.Download(id="download-excel"),
-        dcc.Download(id="download-pdf")
+        dbc.Button("CREATE PDF", id="run", n_clicks=0, style={'backgroundColor':'#ff5959','color':'white','fontWeight': 'bold','border':'none'}),
+        dcc.Download(id="download-excel")
     ],
     style={'display': 'flex', 'justifyContent': 'space-between','marginTop': '20px'}
 )
 
 # Define the layout of the app
 app.layout = html.Div([
+    # Add JavaScript libraries for PDF generation
+    html.Script(src="/assets/js/html2canvas.js"),
+    html.Script(src="/assets/js/jspdf.js"),
+    html.Script(src="/assets/js/print_pdf.js"),
+    
     dbc.Container([
         dbc.Row([
             dbc.Col(html.Img(src="./assets/imdb.png",width=150), width=2),
@@ -154,7 +158,7 @@ app.layout = html.Div([
                 html.Div(id='tabs-content')
             ],type='default',color='#5959ff')
         ])
-    ], style={'padding': '0px'})
+    ], style={'padding': '0px'}, id='mainContainer')
 ],style={'backgroundColor': 'black', 'minHeight': '100vh'})
 
 @app.callback(
@@ -249,36 +253,6 @@ def download_excel(n_clicks):
         type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
-# Callback for PDF download
-@app.callback(
-    Output("download-pdf", "data"),
-    Input("export-pdf-btn", "n_clicks"),
-    prevent_initial_call=True
-)
-def download_pdf(n_clicks):
-    if n_clicks is None:
-        return None
-    
-    try:
-        # Create PDF
-        pdf_content = create_dashboard_pdf()
-        
-        if pdf_content is None:
-            return None
-        
-        # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"IMDB_Dashboard_{timestamp}.pdf"
-        
-        return dcc.send_bytes(
-            pdf_content,
-            filename=filename,
-            type='application/pdf'
-        )
-        
-    except Exception as e:
-        print(f"Error in PDF download callback: {e}")
-        return None
 
 @app.callback(
     Output('series-recommendation-content', 'children'),
@@ -326,7 +300,22 @@ def update_tab(tab,tab2):
         ], style={'width': '50%', 'display': 'inline-block'}),
         html.Div([
             dcc.Graph(id='graph4', figure=fig4),
+        ], style={'width': '50%', 'display': 'inline-block'}),
+
+
+        html.Div([
+            dcc.Graph(id='graph1', figure=fig1),
+        ], style={'width': '50%', 'display': 'inline-block'}),
+        html.Div([
+            dcc.Graph(id='graph2', figure=fig2),
+        ], style={'width': '50%', 'display': 'inline-block'}),
+        html.Div([
+            dcc.Graph(id='graph3', figure=fig3),
+        ], style={'width': '50%', 'display': 'inline-block'}),
+        html.Div([
+            dcc.Graph(id='graph4', figure=fig4),
         ], style={'width': '50%', 'display': 'inline-block'})
+        
     ])
     elif tab == 'content_creators':
         fig1, fig2, fig3, fig4 = generate_visualizations2(data, splits)

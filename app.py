@@ -3,37 +3,43 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
-from src.const import get_constants
+from src.const import get_constants, get_trino_config
+from src.trino_connector import TrinoConnector, create_trino_connection
 import base64
 from datetime import datetime
 
-from src.dash1 import generate_visualizations as generate_visualizations1
-from src.dash2 import generate_visualizations as generate_visualizations2
-from src.dash3 import generate_visualizations as generate_visualizations3
-from src.dash4 import generate_visualizations as generate_visualizations4
+from src.viz1_System_Information import generate_system_information_visualizations
+from src.viz2_Energy import generate_energy_visualizations
+from src.viz3_Environment import generate_environment_visualizations
 from src.export_utils import create_excel_data
-from src.query_manager import get_query_manager
+from src.viz1_query_manager import get_viz1_query_manager
 
-movies = pd.read_csv('./movie_after_cleaning.csv')
-movies_splits = pd.read_excel("./splits_movie.xlsx", sheet_name=None)
-series = pd.read_csv('./series_after_cleaning.csv')
-series_splits = pd.read_excel("./splits_series.xlsx", sheet_name=None)
+# Load data từ delta.lakehouse thay vì đọc CSV
+print("🔄 Đang kết nối và load dữ liệu từ delta.lakehouse...")
 
-# Define function to load data based on tab selection
-def load_data(tab):
-    if tab == 'movie':
-        return movies, movies_splits
-    elif tab == 'series':
-        return series, series_splits
+# Khởi tạo kết nối Trino
+trino_config = get_trino_config()
+trino_connector = create_trino_connection(**trino_config)
+trino_connector.connect()
 
-num_of_works,num_of_countries,num_of_lang,avg_votes = get_constants(movies, series, movies_splits, series_splits)
 
+
+
+
+# Tính toán constants từ dữ liệu delta.lakehouse
+# Khởi tạo các biến cần thiết cho QueryManager
+movies = pd.DataFrame()  # Placeholder
+series = pd.DataFrame()  # Placeholder
+movies_splits = {}       # Placeholder
+series_splits = {}       # Placeholder
+
+# Tính toán số liệu thống kê cơ bản
 # Initialize QueryManager to ensure consistency between Plotly and Excel
-query_manager = get_query_manager(movies, series, movies_splits, series_splits)
+query_manager = get_viz1_query_manager()
 
 
 # Initialize the app
-app = Dash(__name__, external_stylesheets=[dbc.themes.VAPOR], title='IMDB Data Analysis Dashboard')
+app = Dash(__name__, external_stylesheets=[dbc.themes.VAPOR], title='Khu Công Nghiệp & Đô Thị Thông Minh BECAMEX')
 server = app.server
 
 def generate_stats_card (title, value, image_path):
@@ -74,42 +80,35 @@ tab_style = {
     }
 }
 
-MAX_OPTIONS_DISPLAY = 3300
+MAX_OPTIONS_DISPLAY = 100
 
-# Generate options for the dropdown
-dropdown_options_movie = [{'label': title, 'value': title} for title in movies['title'][:MAX_OPTIONS_DISPLAY]]
-dropdown_options_series = [{'label': title, 'value': title} for title in series['title'][:MAX_OPTIONS_DISPLAY]]
+# Generate options for the dropdown từ delta.lakehouse data
+# Tạo dropdown với tên các bảng có sẵn
+available_tables = [
+    'areaunit', 'asset', 'company', 'dim_area', 'dim_date', 'dim_device', 'dim_vehicle',
+    'event', 'eventinfor', 'eventtype', 'fact_lpd', 'factory', 'handytalkiegps',
+    'history', 'intersection', 'lpr_table', 'monitoringhistory', 'rpdaily',
+    'silver_lpr', 'stg_lpr_table', 'test_asset', 'test_info', 'vehicles'
+]
+
+dropdown_options_movie = [{'label': table, 'value': table} for table in available_tables[:MAX_OPTIONS_DISPLAY]]
+dropdown_options_series = dropdown_options_movie  # Sử dụng cùng options
 
 
 offcanvas = html.Div(
     [
-        dbc.Button("Movie Recommendation", id="open-movie-offcanvas", n_clicks=0, style={'backgroundColor':'#5959ff','color':'white','fontWeight': 'bold','border':'none'}),
+        dbc.Button("Data Explorer", id="open-data-offcanvas", n_clicks=0, style={'backgroundColor':'#5959ff','color':'white','fontWeight': 'bold','border':'none'}),
         dbc.Offcanvas(html.Div([
             dcc.Dropdown(
-            id='movie-dropdown',
+            id='data-dropdown',
             options=dropdown_options_movie,
-            placeholder='Select a movie...',
+            placeholder='Select a data table...',
             searchable=True,
             style={'color':'black'}
             ),
-            dcc.Loading(html.Div(id='movie-recommendation-content'),type='circle',color='#5959ff',style={'marginTop': '60px'})]),
-            id="movie-recommendation-offcanvas",
-            title="Movie Recommendations",
-            is_open=False,
-            style={'backgroundColor':"black",'color':'#5959ff'}
-        ),
-        dbc.Button("Series Recommendation", id="open-series-offcanvas", n_clicks=0, style={'backgroundColor':'#5959ff','color':'white','fontWeight': 'bold','border':'none'}),
-        dbc.Offcanvas(html.Div([
-            dcc.Dropdown(
-            id='series-dropdown',
-            options=dropdown_options_series,
-            placeholder='Select a series...',
-            searchable=True,
-            style={'color':'black'}
-            ),
-            dcc.Loading(html.Div(id='series-recommendation-content'),type='circle',color='#5959ff',style={'marginTop': '60px'})]),
-            id="series-recommendation-offcanvas",
-            title="Series Recommendations",
+            dcc.Loading(html.Div(id='data-explorer-content'),type='circle',color='#5959ff',style={'marginTop': '60px'})]),
+            id="data-explorer-offcanvas",
+            title="Data Explorer",
             is_open=False,
             style={'backgroundColor':"black",'color':'#5959ff'}
         ),
@@ -120,6 +119,7 @@ offcanvas = html.Div(
     style={'display': 'flex', 'justifyContent': 'space-between','marginTop': '20px'}
 )
 
+
 # Define the layout of the app
 app.layout = html.Div([
     # Add JavaScript libraries for PDF generation
@@ -129,28 +129,27 @@ app.layout = html.Div([
     
     dbc.Container([
         dbc.Row([
-            dbc.Col(html.Img(src="./assets/imdb.png",width=150), width=2),
+            dbc.Col(html.H1("Delta Lakehouse Analytics", style={'color': '#5959ff', 'fontWeight': 'bold'}), width=2),
             dbc.Col(
                 dcc.Tabs(id='graph-tabs', value='overview', children=[
-                    dcc.Tab(label='Overview', value='overview',style=tab_style['idle'],selected_style=tab_style['active']),
-                    dcc.Tab(label='Content creators', value='content_creators',style=tab_style['idle'],selected_style=tab_style['active']),
-                    dcc.Tab(label='Parental Guide', value='parental',style=tab_style['idle'],selected_style=tab_style['active']),
-                    dcc.Tab(label='Year', value='year',style=tab_style['idle'],selected_style=tab_style['active'])
+                    # dcc.Tab(label='Overview', value='overview',style=tab_style['idle'],selected_style=tab_style['active']),
+                    # dcc.Tab(label='Assets', value='assets',style=tab_style['idle'],selected_style=tab_style['active']),
+                    # dcc.Tab(label='Events', value='events',style=tab_style['idle'],selected_style=tab_style['active']),
+                    # dcc.Tab(label='Analytics', value='analytics',style=tab_style['idle'],selected_style=tab_style['active'])
                 ], style={'marginTop': '15px', 'width':'600px','height':'50px'})
             ,width=6),
             dbc.Col(offcanvas, width=4)
         ]),
+        # dbc.Row([
+            # dbc.Col(generate_stats_card("Total Records",num_of_works,"./assets/movie-icon.png"), width=3),
+            # dbc.Col(generate_stats_card("Tables", num_of_lang,"./assets/language-icon.svg"), width=3),
+            # dbc.Col(generate_stats_card("Categories",num_of_countries,"./assets/country-icon.png"), width=3),
+            # dbc.Col(generate_stats_card("Data Points",avg_votes,"./assets/vote-icon.png"), width=3),
+        # ],style={'marginBlock': '10px'}),
         dbc.Row([
-            
-            dbc.Col(generate_stats_card("Work",num_of_works,"./assets/movie-icon.png"), width=3),
-            dbc.Col(generate_stats_card("Language", num_of_lang,"./assets/language-icon.svg"), width=3),
-            dbc.Col(generate_stats_card("Country",num_of_countries,"./assets/country-icon.png"), width=3),
-            dbc.Col(generate_stats_card("Average Votes",avg_votes,"./assets/vote-icon.png"), width=3),
-        ],style={'marginBlock': '10px'}),
-        dbc.Row([
-            dcc.Tabs(id='tabs', value='movie', children=[
-                dcc.Tab(label='Movie', value='movie',style={'border':'1px line white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold'},selected_style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold','textDecoration': 'underline'}),
-                dcc.Tab(label='Series', value='series',style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold'},selected_style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold','textDecoration': 'underline'}),
+            dcc.Tabs(id='tabs', value='vehicles', children=[
+                # dcc.Tab(label='Vehicles', value='vehicles',style={'border':'1px line white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold'},selected_style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold','textDecoration': 'underline'}),
+                # dcc.Tab(label='Assets', value='assets',style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold'},selected_style={'border':'1px solid white','backgroundColor':'black','color': '#5959ff','fontWeight': 'bold','textDecoration': 'underline'}),
             ], style={'padding': '0px'})
         ]),
         dbc.Row([
@@ -162,73 +161,37 @@ app.layout = html.Div([
 ],style={'backgroundColor': 'black', 'minHeight': '100vh'})
 
 @app.callback(
-    Output("movie-recommendation-offcanvas", "is_open"),
-    Input("open-movie-offcanvas", "n_clicks"),
-    [State("movie-recommendation-offcanvas", "is_open")],
+    Output("data-explorer-offcanvas", "is_open"),
+    Input("open-data-offcanvas", "n_clicks"),
+    [State("data-explorer-offcanvas", "is_open")],
 )
-def toggle_offcanvas_movie(n1, is_open):
+def toggle_offcanvas_data(n1, is_open):
     if n1:
         return not is_open
     return is_open
 
 
+
+
+
+
+# Callback to update data explorer based on dropdown selection
 @app.callback(
-    Output("series-recommendation-offcanvas", "is_open"),
-    Input("open-series-offcanvas", "n_clicks"),
-    [State("series-recommendation-offcanvas", "is_open")],
+    Output('data-explorer-content', 'children'),
+    [Input('data-dropdown', 'value')]
 )
-def toggle_offcanvas_series(n1, is_open):
-    if n1:
-        return not is_open
-    return is_open
-
-
-# Function to get recommendations
-def get_recommendations(df, indices, title, cosine_sim):
-    idx = indices[title]
-
-    # Get the pairwsie similarity scores of all movies with that movie
-    sim_scores = list(enumerate(cosine_sim[idx]))
-
-    # Sort the movies based on the similarity scores
-    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-
-    # Get the scores of the 10 most similar movies
-    sim_scores = sim_scores[1:6]
-
-    # Get the movie indices
-    movie_indices = [i[0] for i in sim_scores]
-
-    # Return the top 10 most similar movies
-    return df['title'].iloc[movie_indices]
-
-
-
-# Callback to update image container based on dropdown selection
-@app.callback(
-    Output('movie-recommendation-content', 'children'),
-    [Input('movie-dropdown', 'value')]
-)
-def update_recommendation_movie(selected_movie):
-    df = movies.copy()
-    df["word_cloud"]=movies["description"]+" "+movies["genre"]+" "+movies["director"]+" "+movies["writer"]+" "+movies["country"]
-    tfidf = TfidfVectorizer(stop_words='english')
-    df["word_cloud"] = df["word_cloud"].fillna('')  
-    tfidf_matrix = tfidf.fit_transform(df['word_cloud'])
-    cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
-    indices = pd.Series(df.index, index=df['title']).drop_duplicates()
-
-    if selected_movie:
-        x = []
-        for i in range(0, 5):
-            x.append(movies[movies["title"] == get_recommendations(movies,indices,selected_movie,cosine_sim).iloc[i]][["link","title"]])
-    else:
-        return []
+def update_data_explorer(selected_data):
+    if not selected_data or movies.empty:
+        return html.Div("Không có dữ liệu từ delta.lakehouse", style={'color': '#5959ff'})
     
-    return html.Div(children=[
-            dcc.Link(f"{i+1} - {data['title'].values[0]}", href=data['link'].values[0], style={'display':'block','color':'#5959ff','marginBlock':'10px'}
-                    ,target='_blank') for i, data in enumerate(x)
-    ],style={'marginTop': '10px','textAlign': 'center','color': '#5959ff'})
+    # Hiển thị thông tin cơ bản về bảng được chọn
+    return html.Div([
+        html.H6(f"Bảng: {selected_data}", style={'color': '#5959ff'}),
+        html.P(f"Số dòng: {len(movies)}", style={'color': '#5959ff'}),
+        html.P(f"Số cột: {len(movies.columns)}", style={'color': '#5959ff'}),
+        html.P("Các cột:", style={'color': '#5959ff'}),
+        html.Ul([html.Li(col, style={'color': '#5959ff'}) for col in movies.columns[:10]])
+    ], style={'marginTop': '10px', 'textAlign': 'center'})
 
 # Callback for Excel download
 @app.callback(
@@ -254,106 +217,180 @@ def download_excel(n_clicks):
     )
 
 
-@app.callback(
-    Output('series-recommendation-content', 'children'),
-    [Input('series-dropdown', 'value')]
-)
-def update_recommendation_series(selected_series):
-    df = series.copy()
-    df["word_cloud"]=series["description"]+" "+series["genre"]+" "+series["creators"]+" "+series["stars"]+" "+series["country"] +" "+ series['production_company'] +" "+ series['parentalguide']
-    tfidf = TfidfVectorizer(stop_words='english')
-    df["word_cloud"] = df["word_cloud"].fillna('')  
-    tfidf_matrix = tfidf.fit_transform(df['word_cloud'])
-    cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
-    indices = pd.Series(df.index, index=df['title']).drop_duplicates()
-    
-    if selected_series:
-        x = []
-        for i in range(0, 5):
-            x.append(series[series["title"] == get_recommendations(series,indices,selected_series,cosine_sim).iloc[i]][["link", "title"]])
-    else:
-        return []
-    return html.Div(children=[
-            dcc.Link(f"{i+1} - {data['title'].values[0]}", href=data['link'].values[0], style={'display':'block','color':'#5959ff','marginBlock':'10px'}
-                    ,target='_blank') for i, data in enumerate(x)
-    ],style={'marginTop': '10px','textAlign': 'center','color': '#5959ff'})
 
 
 @app.callback(
     Output('tabs-content', 'children'),
     [Input('graph-tabs', 'value'),Input('tabs', 'value')]
 )
-def update_tab(tab,tab2):
-    data, splits = load_data(tab2)
-
+def update_tab(tab, tab2):
+    # Tạo visualizations cho system information
     if tab == 'overview':
-        fig1, fig2, fig3, fig4 = generate_visualizations1(data, splits)
-        return html.Div([
-        html.Div([
-            dcc.Graph(id='graph1', figure=fig1),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph2', figure=fig2),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph3', figure=fig3),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph4', figure=fig4),
-        ], style={'width': '50%', 'display': 'inline-block'}),
+        return create_system_information_dashboard()
+    # elif tab == 'assets':
+    #     return create_delta_visualizations(event_df, {}, "Assets Analysis")
+    # elif tab == 'events':
+    #     return create_delta_visualizations(event_df, {}, "Events Analysis")
+    # elif tab == 'analytics':
+    #     return create_delta_visualizations(event_df, {}, "Advanced Analytics")
+    else:
+        return create_system_information_dashboard()
 
-
-        html.Div([
-            dcc.Graph(id='graph1', figure=fig1),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph2', figure=fig2),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph3', figure=fig3),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph4', figure=fig4),
-        ], style={'width': '50%', 'display': 'inline-block'})
+def create_system_information_dashboard():
+    """Tạo dashboard cho system information với SQL queries từ Trino"""
+    try:
+        # Tạo visualizations sử dụng SQL queries từ Trino
+        fig_total_events, fig_system_pie, fig_avg_processing, fig_avg_handling, fig_avg_loss_connection, fig_notification_table, fig_downtime_table = generate_system_information_visualizations(
+            trino_connector=trino_connector,
+            start_date='2025-08-08',  # Có thể thay đổi thành dynamic
+            end_date='2025-09-04',    # Có thể thay đổi thành dynamic
+            area=None                 # Có thể thay đổi thành dynamic
+        )
         
-    ])
-    elif tab == 'content_creators':
-        fig1, fig2, fig3, fig4 = generate_visualizations2(data, splits)
+        # Tạo energy visualizations
+        fig_consumed_electricity, fig_energy_cost, fig_green_energy, fig_co2_emission = generate_energy_visualizations(
+            trino_connector=trino_connector,
+            start_date='2025-08-08',
+            end_date='2025-09-04',
+            area=None
+        )
+        
+        # Tạo environment visualizations (6 cards)
+        (
+            fig_env_tanks,
+            fig_env_km,
+            fig_env_hours,
+            fig_env_fuel_transport,
+            fig_env_fuel_watering,
+            fig_env_leaves,
+        ) = generate_environment_visualizations(
+            trino_connector=trino_connector,
+            start_date='2025-08-08',
+            end_date='2025-09-04',
+            area=None
+        )
+        
         return html.Div([
-        html.Div([
-            dcc.Graph(id='graph1', figure=fig1),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph2', figure=fig2),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph3', figure=fig3),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph4', figure=fig4),
-        ], style={'width': '50%', 'display': 'inline-block'})
-    ])
-    elif tab == 'parental':
-        fig1, fig2 = generate_visualizations3(data, splits)
-        return html.Div([
-        html.Div([
-            dcc.Graph(id='graph1', figure=fig1),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph2', figure=fig2),
-        ], style={'width': '50%', 'display': 'inline-block'}),
+            html.H3("Tình trang Thông báo và Hoạt động Hệ thống", 
+                    style={'color': '#00d4ff', 'textAlign': 'center', 'marginBottom': '20px', 'marginTop': '40px'}),
+
+            
+            # Row 1: Left (3 stacked small cards), Middle (Pie), Right (Total events)
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_total_events)
+                    ], style={'backgroundColor': "#05089a", 'padding': '10px', 'borderRadius': '10px', 'height': '100%'})
+                ], width=4, style={'display': 'flex', 'flexDirection': 'column'}),
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_system_pie)
+                    ], style={'backgroundColor': "#05089a", 'padding': '10px', 'borderRadius': '10px', 'height': '100%'})
+                ], width=4, style={'display': 'flex', 'flexDirection': 'column'}),
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_avg_processing)
+                    ], style={'backgroundColor': "#05089a", 'padding': '10px', 'borderRadius': '10px', 'marginBottom': '10px', 'height': 'calc(33.33% - 7px)'}),
+                    html.Div([
+                        dcc.Graph(figure=fig_avg_handling)
+                    ], style={'backgroundColor': "#05089a", 'padding': '10px', 'borderRadius': '10px', 'marginBottom': '10px', 'height': 'calc(33.33% - 7px)'}),
+                    html.Div([
+                        dcc.Graph(figure=fig_avg_loss_connection)
+                    ], style={'backgroundColor': "#05089a", 'padding': '10px', 'borderRadius': '10px', 'height': 'calc(33.33% - 6px)'})
+                ], width=4, style={'display': 'flex', 'flexDirection': 'column', 'height': '100%'}),
+
+            ], style={'marginBottom': '20px', 'alignItems': 'stretch'}),
+            
+            # Row 2: Hai bảng mới
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_notification_table)
+                    ], style={'backgroundColor': "#05089a", 'padding': '10px', 'borderRadius': '10px', 'height': '100%'})
+                ], width=6),
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_downtime_table)
+                    ], style={'backgroundColor': "#05089a", 'padding': '10px', 'borderRadius': '10px', 'height': '100%'})
+                ], width=6)
+            ], style={'marginBottom': '20px', 'alignItems': 'stretch'}),
+            
+            # Row 3: Energy Dashboard
+            html.H3("Năng lượng", 
+                   style={'color': '#00d4ff', 'textAlign': 'center', 'marginBottom': '20px', 'marginTop': '40px'}),
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_consumed_electricity)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px', 'height': '100%'})
+                ], width=6),
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_energy_cost)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px', 'height': '100%'})
+                ], width=6)
+            ], style={'marginBottom': '20px', 'alignItems': 'stretch'}),
+            
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_green_energy)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px', 'height': '100%'})
+                ], width=6),
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_co2_emission)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px', 'height': '100%'})
+                ], width=6)
+            ], style={'marginBottom': '20px', 'alignItems': 'stretch'}),
+            
+            # Row 4: Environment Dashboard
+            html.H3("Môi trường", 
+                   style={'color': '#00d4ff', 'textAlign': 'center', 'marginBottom': '20px', 'marginTop': '10px'}),
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_env_tanks)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px', 'marginBottom': '10px'}),
+                    html.Div([
+                        dcc.Graph(figure=fig_env_km)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px', 'marginBottom': '10px'}),
+                    html.Div([
+                        dcc.Graph(figure=fig_env_hours)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px'})
+                ], width=6),
+                dbc.Col([
+                    html.Div([
+                        dcc.Graph(figure=fig_env_fuel_transport)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px', 'marginBottom': '10px'}),
+                    html.Div([
+                        dcc.Graph(figure=fig_env_fuel_watering)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px', 'marginBottom': '10px'}),
+                    html.Div([
+                        dcc.Graph(figure=fig_env_leaves)
+                    ], style={'backgroundColor': "#1a1a2e", 'padding': '10px', 'borderRadius': '10px'})
+                ], width=6)
+            ], style={'marginBottom': '20px', 'alignItems': 'stretch'})
         ])
-    elif tab == 'year':
-        fig1, fig2 = generate_visualizations4(data, splits)
+        
+    except Exception as e:
         return html.Div([
-        html.Div([
-            dcc.Graph(id='graph1', figure=fig1),
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([
-            dcc.Graph(id='graph2', figure=fig2),
-        ], style={'width': '50%', 'display': 'inline-block'}),
+            html.H3("Thông tin Hệ thống - Delta Lakehouse", 
+                   style={'color': '#5959ff', 'textAlign': 'center', 'marginBottom': '20px'}),
+            html.Div([
+                html.H5("Lỗi khi tải dữ liệu", style={'color': '#ff5959'}),
+                html.P(f"Chi tiết lỗi: {str(e)}", style={'color': 'white'}),
+                html.P("Vui lòng kiểm tra kết nối Trino và cấu hình", style={'color': '#ff5959'})
+            ], style={'backgroundColor': '#1a1a1a', 'padding': '20px', 'borderRadius': '10px', 'textAlign': 'center'})
         ])
+
+
 
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=8050)
+    try:
+        app.run(debug=False, host='0.0.0.0', port=8050)
+    finally:
+        # Đóng kết nối Trino khi ứng dụng kết thúc
+        if 'trino_connector' in locals() and trino_connector:
+            trino_connector.disconnect()

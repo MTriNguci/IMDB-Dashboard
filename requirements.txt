@@ -10,3 +10,4 @@ gunicorn
 pdfkit
 selenium
 Pillow
+trino

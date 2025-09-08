@@ -219,7 +219,7 @@ class viz1_QueryManager:
                       ) >= TIMESTAMP '{start_date}'
                       AND (
                         lakehouse.event."CreateDate" AT TIME ZONE 'Asia/Ho_Chi_Minh'
-                      ) < TIMESTAMP '{end_date}'
+                      ) <= TIMESTAMP '{end_date}'
                     """
                 
                 query += ") AS virtual_table"

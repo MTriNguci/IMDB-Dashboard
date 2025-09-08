@@ -11,10 +11,7 @@ services:
       - DASH_DEBUG=False
     volumes:
       # Mount data files for easy updates without rebuilding
-      - ./movie_after_cleaning.csv:/app/movie_after_cleaning.csv:ro
-      - ./series_after_cleaning.csv:/app/series_after_cleaning.csv:ro
-      - ./splits_movie.xlsx:/app/splits_movie.xlsx:ro
-      - ./splits_series.xlsx:/app/splits_series.xlsx:ro
+
       - ./assets:/app/assets:ro
     restart: unless-stopped
     healthcheck:

@@ -24,37 +24,69 @@ function createPDF(){
     console.log("Libraries loaded, creating PDF...");
     
     // Use callback approach for older html2canvas versions
+// html2canvas(printArea, {
+//     scale: 2,
+//     useCORS: true,
+//     backgroundColor: "#033264"
+// }).then(function(canvas) {
+//     console.log("Canvas created, generating PDF...");
+
+//     var imgData = canvas.toDataURL('image/png');
+//     var doc = new jsPDF('p', 'mm', "a4");
+
+//     const pageHeight = doc.internal.pageSize.getHeight();
+//     const imgWidth = doc.internal.pageSize.getWidth();
+//     var imgHeight = canvas.height * imgWidth / canvas.width;
+//     var heightLeft = imgHeight;
+
+//     var position = 0; // top padding for first page
+
+//     doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+//     heightLeft -= pageHeight;
+
+//     while (heightLeft > 0) {
+//         position = heightLeft - imgHeight + 10; 
+//         doc.addPage();
+//         doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+//         heightLeft -= pageHeight;
+//     }
+
+//     console.log("PDF created, saving...");
+//     doc.save('IMDB_Dashboard.pdf');
+//     console.log("PDF saved successfully!");
+// });
 html2canvas(printArea, {
     scale: 2,
     useCORS: true,
-    backgroundColor: '#000000'
+    backgroundColor: "#033264"
 }).then(function(canvas) {
-    console.log("Canvas created, generating PDF...");
+    var imgData = canvas.toDataURL("image/png");
+    var pdf = new jsPDF("p", "mm", "a4");
 
-    var imgData = canvas.toDataURL('image/png');
-    var doc = new jsPDF('p', 'mm', "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
 
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const imgWidth = doc.internal.pageSize.getWidth();
-    var imgHeight = canvas.height * imgWidth / canvas.width;
-    var heightLeft = imgHeight;
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    var position = 0; // top padding for first page
+    let heightLeft = imgHeight;
+    let position = 0;
 
-    doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    // Trang đầu
+    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
 
+    // Các trang tiếp theo
     while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 10; 
-        doc.addPage();
-        doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        position -= pageHeight;  // dịch lên đúng 1 trang
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
         heightLeft -= pageHeight;
     }
 
-    console.log("PDF created, saving...");
-    doc.save('IMDB_Dashboard.pdf');
-    console.log("PDF saved successfully!");
+    pdf.save("Báo cáo tổng quan.pdf");
 });
+
 
 }
 

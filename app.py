@@ -1,9 +1,9 @@
 from dash import Dash, html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import linear_kernel
-from src.const import get_constants, get_trino_config
+# from sklearn.feature_extraction.text import TfidfVectorizer
+# from sklearn.metrics.pairwise import linear_kernel
+from src.const import  get_trino_config
 from src.trino_connector import TrinoConnector, create_trino_connection
 import base64
 from datetime import datetime

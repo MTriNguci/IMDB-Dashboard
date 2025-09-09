@@ -26,7 +26,7 @@ def generate_system_information_visualizations(trino_connector=None, start_date=
         number={'font': {'size': 50, 'color': '#5959ff'}},
         domain={'x': [0, 1], 'y': [0, 1]}
     ))
-    pie_height = 480
+    pie_height = 360
     small_card_height = int(pie_height / 3)
     fig_total_events.update_layout(
         template='plotly_dark',
